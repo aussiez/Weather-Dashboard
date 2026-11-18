@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Weather">
+<meta name="theme-color" content="#338cf2">
+<title>Weather</title>
+<style>
+*{box-sizing:border-box}
+html{min-height:100%;background:linear-gradient(#338cf2,#8ccbff) fixed}
+body{margin:0;min-height:100dvh;font:16px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#fff;padding-top:env(safe-area-inset-top)}
+#app{max-width:560px;margin:0 auto;padding:16px 16px 100px}
+h1{font-size:32px;margin:8px 0 14px}
+.bar{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.2);border-radius:14px;padding:6px 12px;margin-bottom:4px}
+.bar input{flex:1;min-width:0;background:none;border:0;outline:0;color:#fff;font-size:17px;padding:8px 0}
+input::placeholder{color:rgba(255,255,255,.7)}
+.bar button{background:none;border:0;color:#fff;font-size:20px;padding:4px 6px}
+.seg{display:flex;background:rgba(255,255,255,.2);border-radius:10px;padding:3px;margin:14px 0}
+.seg button{flex:1;border:0;background:none;color:#fff;padding:9px;border-radius:8px;font-size:15px;font-weight:600}
+.seg .on{background:rgba(255,255,255,.35)}
+.card{background:rgba(255,255,255,.15);border-radius:20px;padding:16px;margin-bottom:14px}
+.hero{text-align:center;padding:22px 16px;position:relative}
+.hero .place{font-size:22px;font-weight:600;padding:0 36px}
+.hero .em{font-size:84px;line-height:1.2}
+.hero .big{font-size:88px;font-weight:200;line-height:1}
+.hero .d{font-size:20px;margin-top:6px}
+.star{position:absolute;right:12px;top:12px;background:none;border:0;font-size:26px;color:#fff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.grid .card{margin:0}
+.lbl{font-size:12px;font-weight:600;text-transform:uppercase;opacity:.8;letter-spacing:.03em}
+.val{font-size:28px;font-weight:600;margin-top:6px;white-space:nowrap}
+.sub{font-size:13px;opacity:.8;min-height:1.2em}
+.err{background:rgba(190,30,30,.75);border-radius:14px;padding:12px;margin:10px 0 14px}
+.note{text-align:center;font-size:13px;opacity:.8}
+.hours{display:flex;gap:20px;overflow-x:auto;padding:8px 0 2px}
+.hours div{text-align:center;min-width:48px}
+.hours i{display:block;font-style:normal;font-size:26px;margin:6px 0}
+.day{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid rgba(255,255,255,.25)}
+.day:first-child{border-top:0}
+.day b{width:98px}
+.day .p{width:40px;font-size:12px}
+.day .sp{flex:1}
+.row{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.15);border-radius:16px;margin-bottom:10px}
+.row .rn{flex:1;padding:12px 6px 12px 16px;cursor:pointer}
+.ri{display:flex;align-items:center;gap:10px}
+.ri .t{flex:1}
+.ri .t small{display:block;opacity:.8}
+.ri .e{font-size:26px}
+.ri .n{font-size:30px;font-weight:300}
+.row .x{background:none;border:0;color:#fff;opacity:.7;font-size:20px;padding:14px}
+.btn{background:rgba(255,255,255,.3);border:0;color:#fff;font-size:15px;font-weight:600;padding:10px 16px;border-radius:10px;margin-top:10px}
+.btn.red{background:rgba(190,30,30,.7)}
+.setup input{width:100%;background:rgba(255,255,255,.2);border:0;outline:0;color:#fff;font-size:16px;padding:12px;border-radius:12px;margin-top:10px}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:rgba(0,0,0,.35);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+nav[hidden]{display:none}
+nav button{flex:1;background:none;border:0;color:#fff;opacity:.6;font-size:11px;padding:4px}
+nav button span{display:block;font-size:22px}
+nav .on{opacity:1}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<nav id="nav" hidden></nav>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ls = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const S = {
+  key: ls.get('wx_key', ''), city: ls.get('wx_city', 'London'), units: ls.get('wx_units', 'metric'),
+  saved: ls.get('wx_saved', ['London', 'New York', 'Tokyo']),
+  tab: 'today', cur: null, fc: null, err: '', loading: false, updated: null
+};
+const RC = {}; // saved-city row cache
+
+const EMOJI = {'01d':'☀️','01n':'🌙','02d':'⛅','02n':'☁️','03':'☁️','04':'☁️','09':'🌧️','10d':'🌦️','10n':'🌧️','11':'⛈️','13':'❄️','50':'🌫️'};
+const em = i => EMOJI[i] || EMOJI[(i || '').slice(0, 2)] || '❔';
+const deg = n => Math.round(n) + '°';
+const sym = () => S.units === 'metric' ? '°C' : '°F';
+const wind = v => S.units === 'metric' ? Math.round(v * 3.6) + ' km/h' : Math.round(v) + ' mph';
+const vis = m => S.units === 'metric' ? (m / 1000).toFixed(1) + ' km' : (m / 1609.34).toFixed(1) + ' mi';
+const compass = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d / 45) % 8];
+const shifted = (unix, tz) => new Date((unix + tz) * 1000);
+const clock = (unix, tz, o) => shifted(unix, tz).toLocaleTimeString('en-US', Object.assign({timeZone: 'UTC'}, o));
+
+function grad(i) {
+  const n = i.endsWith('n'), p = i.slice(0, 2);
+  const c = ['01','02'].includes(p) ? (n ? ['#0d1440','#332666'] : ['#338cf2','#8ccbff'])
+    : ['03','04','50'].includes(p) ? (n ? ['#1f2433','#474d61'] : ['#66809e','#adbdd1'])
+    : ['09','10','11'].includes(p) ? ['#2e3d5c','#61759a']
+    : p === '13' ? ['#5f7f9f','#9ab6d1'] : ['#338cf2','#8ccbff'];
+  return `linear-gradient(${c[0]},${c[1]})`;
+}
+
+async function api(ep, city) {
+  const url = `https://api.openweathermap.org/data/2.5/${ep}?q=${encodeURIComponent(city)}&appid=${encodeURIComponent(S.key)}&units=${S.units}`;
+  let r;
+  try { r = await fetch(url); } catch { throw new Error('Couldn’t reach the weather service. Check your connection.'); }
+  if (r.status === 401) throw new Error('API key rejected. Check it’s correct (new keys can take a couple of hours to activate).');
+  if (r.status === 404) throw new Error('City not found. Try a different spelling.');
+  if (!r.ok) throw new Error('Unexpected response from the weather service.');
+  return r.json();
+}
+
+async function load(city) {
+  const target = (city ?? S.city).trim();
+  if (!target) return;
+  S.loading = true; S.err = ''; render();
+  try {
+    const [cur, fc] = await Promise.all([api('weather', target), api('forecast', target)]);
+    S.cur = cur; S.fc = fc; S.city = target; S.updated = new Date();
+    ls.set('wx_city', target);
+  } catch (e) { S.err = e.message; }
+  S.loading = false; render();
+}
+
+const isSaved = n => S.saved.some(x => x.toLowerCase() === n.toLowerCase());
+const hrOf = (e, tz) => shifted(e.dt, tz).getUTCHours();
+
+function daily() {
+  const tz = S.fc.city.timezone, g = {};
+  S.fc.list.forEach(e => { const k = shifted(e.dt, tz).toISOString().slice(0, 10); (g[k] = g[k] || []).push(e); });
+  const today = shifted(Date.now() / 1000, tz).toISOString().slice(0, 10);
+  return Object.keys(g).sort().map(k => {
+    const a = g[k];
+    const noon = a.reduce((b, e) => Math.abs(hrOf(e, tz) - 12) < Math.abs(hrOf(b, tz) - 12) ? e : b);
+    return {
+      label: k === today ? 'Today' : new Date(k + 'T00:00:00Z').toLocaleDateString('en-US', {weekday: 'long', timeZone: 'UTC'}),
+      icon: noon.weather[0].icon,
+      lo: Math.min(...a.map(e => e.main.temp_min)), hi: Math.max(...a.map(e => e.main.temp_max)),
+      pop: Math.max(...a.map(e => e.pop || 0))
+    };
+  });
+}
+
+const unitSeg = () => `<div class="seg"><button data-act="units" data-v="metric" class="${S.units === 'metric' ? 'on' : ''}">°C</button><button data-act="units" data-v="imperial" class="${S.units === 'imperial' ? 'on' : ''}">°F</button></div>`;
+const errBox = () => S.err ? `<div class="err">⚠️ ${esc(S.err)}</div>` : '';
+const card = (l, v, s) => `<div class="card"><div class="lbl">${l}</div><div class="val">${esc(v)}</div><div class="sub">${esc(s || '')}</div></div>`;
+
+const views = {
+  today() {
+    let h = `<form data-form="search" class="bar"><span>🔍</span><input name="q" placeholder="Search city" autocomplete="off" autocapitalize="words" enterkeyhint="search"><button type="button" data-act="refresh" aria-label="Refresh">↻</button></form>` + unitSeg() + errBox();
+    const w = S.cur;
+    if (!w) return h + (S.loading ? '<p class="note">Loading…</p>' : '');
+    const c = w.weather[0], tz = w.timezone;
+    const place = w.name + (w.sys.country ? ', ' + w.sys.country : '');
+    h += `<div class="card hero"><button class="star" data-act="star" aria-label="Save city">${isSaved(w.name) ? '⭐' : '☆'}</button>
+      <div class="place">${esc(place)}</div><div class="em">${em(c.icon)}</div>
+      <div class="big">${deg(w.main.temp)}</div><div class="d">${esc(c.description.replace(/^./, m => m.toUpperCase()))}</div>
+      <div style="margin-top:6px;opacity:.9">H: ${deg(w.main.temp_max)} &nbsp; L: ${deg(w.main.temp_min)}</div></div>
+      <div class="grid">
+      ${card('🌡️ Feels like', Math.round(w.main.feels_like) + sym())}
+      ${card('💧 Humidity', w.main.humidity + '%')}
+      ${card('🌬️ Wind', wind(w.wind.speed), w.wind.deg != null ? compass(w.wind.deg) : '')}
+      ${card('⏲️ Pressure', w.main.pressure + ' hPa')}
+      ${card('👁️ Visibility', w.visibility != null ? vis(w.visibility) : 'N/A')}
+      ${card('☁️ Cloud cover', w.clouds.all + '%')}
+      ${card('🌅 Sunrise', clock(w.sys.sunrise, tz, {hour: 'numeric', minute: '2-digit'}))}
+      ${card('🌇 Sunset', clock(w.sys.sunset, tz, {hour: 'numeric', minute: '2-digit'}))}
+      </div>`;
+    if (S.updated) h += `<p class="note">Updated ${S.updated.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>`;
+    return h;
+  },
+  forecast() {
+    let h = `<h1>${esc(S.city)} Forecast</h1>` + errBox();
+    if (!S.fc) return h + (S.loading ? '<p class="note">Loading…</p>' : '');
+    const tz = S.fc.city.timezone;
+    h += `<div class="card"><div class="lbl">Next 24 hours</div><div class="hours">` +
+      S.fc.list.slice(0, 8).map(e => `<div>${clock(e.dt, tz, {hour: 'numeric'})}<i>${em(e.weather[0].icon)}</i><b>${deg(e.main.temp)}</b><div style="font-size:12px;opacity:${e.pop ? 1 : .4}">${Math.round((e.pop || 0) * 100)}%</div></div>`).join('') +
+      `</div></div><div class="card"><div class="lbl">5-day forecast</div><div>` +
+      daily().map(d => `<div class="day"><b>${d.label}</b><span style="font-size:24px">${em(d.icon)}</span><span class="p">${d.pop > 0 ? Math.round(d.pop * 100) + '%' : ''}</span><span class="sp"></span><span style="opacity:.7">${deg(d.lo)}</span><b style="width:auto;min-width:36px;text-align:right">${deg(d.hi)}</b></div>`).join('') +
+      `</div></div>`;
+    return h;
+  },
+  cities() {
+    let h = `<h1>Saved Cities</h1><form data-form="add" class="bar"><span>➕</span><input name="q" placeholder="Add a city" autocomplete="off" autocapitalize="words" enterkeyhint="done"></form>` + errBox() + '<div style="height:14px"></div>';
+    if (!S.saved.length) return h + '<p class="note">No saved cities yet. Add one above, or tap the star on the Today page.</p>';
+    return h + S.saved.map(n => `<div class="row"><div class="rn" data-act="open" data-v="${esc(n)}"><div class="ri" data-row="${esc(n)}">${rowInner(n)}</div></div><button class="x" data-act="del" data-v="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></div>`).join('');
+  },
+  settings() {
+    return `<h1>Settings</h1>
+      <div class="card"><div class="lbl">Units</div>${unitSeg()}</div>
+      <div class="card"><div class="lbl">API key</div><p style="margin:8px 0 0">${S.key ? '✅ Key saved on this device' : '❌ No key'}</p><button class="btn" data-act="changekey">Change API key</button></div>
+      <div class="card"><div class="lbl">Current city</div><p style="margin:8px 0 0;font-weight:600">${esc(S.city)}</p>
+        ${S.updated ? `<p class="sub">Last updated ${S.updated.toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</p>` : ''}
+        <button class="btn" data-act="refresh">↻ Refresh now</button></div>
+      <div class="card"><div class="lbl">Saved cities</div><p style="margin:8px 0 0;font-weight:600">${S.saved.length} saved</p><button class="btn red" data-act="clear">Clear all</button></div>`;
+  },
+  setup() {
+    return `<div class="setup"><h1>Weather</h1><div class="card"><p style="margin-top:0">Paste your OpenWeather API key to get started. It’s stored only in this browser, on this device.</p>
+      <form data-form="key"><input name="q" placeholder="API key" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" type="submit">Save and continue</button></form>
+      <p class="sub" style="margin-top:12px">Get a free key at openweathermap.org/api. New keys can take a couple of hours to activate.</p></div>${errBox()}</div>`;
+  }
+};
+
+function rowInner(n) {
+  const w = RC[n + '|' + S.units];
+  if (!w) return `<div class="t"><b>${esc(n)}</b><small>Loading…</small></div>`;
+  if (w === 'x') return `<div class="t"><b>${esc(n)}</b><small>Unavailable</small></div>`;
+  return `<div class="t"><b>${esc(n)}</b><small>${esc(w.weather[0].description.replace(/^./, m => m.toUpperCase()))}</small></div><span class="e">${em(w.weather[0].icon)}</span><span class="n">${deg(w.main.temp)}</span>`;
+}
+
+function loadRows() {
+  S.saved.forEach(async n => {
+    const k = n + '|' + S.units;
+    if (RC[k]) return;
+    try { RC[k] = await api('weather', n); } catch { RC[k] = 'x'; }
+    const el = [...document.querySelectorAll('[data-row]')].find(x => x.dataset.row === n);
+    if (el) el.innerHTML = rowInner(n);
+  });
+}
+
+const TABS = [['today','☀️','Today'], ['forecast','📅','Forecast'], ['cities','📍','Cities'], ['settings','⚙️','Settings']];
+
+function render() {
+  const icon = S.cur ? S.cur.weather[0].icon : '';
+  document.documentElement.style.backgroundImage = grad(icon);
+  const nav = $('#nav');
+  if (!S.key) { $('#app').innerHTML = views.setup(); nav.hidden = true; return; }
+  nav.hidden = false;
+  nav.innerHTML = TABS.map(t => `<button data-act="tab" data-v="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}"><span>${t[1]}</span>${t[2]}</button>`).join('');
+  $('#app').innerHTML = views[S.tab]();
+  if (S.tab === 'cities') loadRows();
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const v = el.dataset.v;
+  switch (el.dataset.act) {
+    case 'tab': S.tab = v; S.err = ''; render(); window.scrollTo(0, 0); break;
+    case 'units': S.units = v; ls.set('wx_units', v); load(); break;
+    case 'refresh': load(); break;
+    case 'star':
+      if (S.cur) {
+        const n = S.cur.name;
+        S.saved = isSaved(n) ? S.saved.filter(x => x.toLowerCase() !== n.toLowerCase()) : S.saved.concat(n);
+        ls.set('wx_saved', S.saved); render();
+      } break;
+    case 'open': S.tab = 'today'; load(v); window.scrollTo(0, 0); break;
+    case 'del': S.saved = S.saved.filter(x => x !== v); ls.set('wx_saved', S.saved); render(); break;
+    case 'clear': S.saved = []; ls.set('wx_saved', S.saved); render(); break;
+    case 'changekey': S.key = ''; S.err = ''; render(); break;
+  }
+});
+
+document.addEventListener('submit', async e => {
+  e.preventDefault();
+  const kind = e.target.dataset.form;
+  const q = (new FormData(e.target).get('q') || '').trim();
+  if (!q) return;
+  if (kind === 'key') { S.key = q; ls.set('wx_key', q); S.err = ''; S.tab = 'today'; Object.keys(RC).forEach(k => delete RC[k]); load(); }
+  else if (kind === 'search') { load(q); }
+  else if (kind === 'add') {
+    S.err = '';
+    try {
+      const w = await api('weather', q);
+      if (!isSaved(w.name)) { S.saved.push(w.name); ls.set('wx_saved', S.saved); }
+    } catch (err) { S.err = err.message; }
+    render();
+  }
+});
+
+render();
+if (S.key) load();
+</script>
+</body>
+</html>
